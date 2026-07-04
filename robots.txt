@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /.netlify/
+Disallow: /tools/
+
+Sitemap: https://auxova-foundation.netlify.app/sitemap.xml
