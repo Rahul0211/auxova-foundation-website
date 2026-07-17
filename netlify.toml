@@ -28,9 +28,35 @@
     Cache-Control = "public, max-age=86400, stale-while-revalidate=604800"
 
 [[headers]]
-  for = "/index.html"
+  for = "/*.html"
   [headers.values]
     Cache-Control = "public, max-age=3600, must-revalidate"
+
+# Pretty URLs for multi-page site
+[[redirects]]
+  from = "/about"
+  to = "/about.html"
+  status = 200
+
+[[redirects]]
+  from = "/programs"
+  to = "/programs.html"
+  status = 200
+
+[[redirects]]
+  from = "/impact"
+  to = "/impact.html"
+  status = 200
+
+[[redirects]]
+  from = "/insights"
+  to = "/insights.html"
+  status = 200
+
+[[redirects]]
+  from = "/contact"
+  to = "/contact.html"
+  status = 200
 
 # Serve robots.txt and sitemap.xml directly
 [[redirects]]
@@ -41,10 +67,4 @@
 [[redirects]]
   from = "/sitemap.xml"
   to = "/sitemap.xml"
-  status = 200
-
-# SPA fallback (must come after specific redirects)
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
   status = 200

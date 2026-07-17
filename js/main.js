@@ -1,7 +1,7 @@
 /**
  * Auxova Foundation — Main JavaScript
  * Handles: scroll reveals, counter animations, journey SVG path draw,
- * mobile menu toggle, smooth scroll, hover effects.
+ * mobile menu toggle, smooth scroll, contact form, active nav.
  */
 
 (function () {
@@ -11,53 +11,27 @@
      UTILITIES
      ============================================================ */
 
-  /**
-   * Easing: easeOutCubic
-   * @param {number} t - progress 0..1
-   * @returns {number}
-   */
   function easeOutCubic(t) {
     return 1 - Math.pow(1 - t, 3);
   }
 
-  /**
-   * Easing: easeInOutQuad
-   * @param {number} t - progress 0..1
-   * @returns {number}
-   */
   function easeInOutQuad(t) {
     return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
   }
 
-  /**
-   * Run a tween for `duration` ms, calling `onFrame` with eased progress.
-   * @param {number} duration - milliseconds
-   * @param {function} onFrame - called with t (0..1, eased)
-   * @param {function} [easeFn] - easing function, defaults to easeOutCubic
-   */
   function tween(duration, onFrame, easeFn) {
     var ease = easeFn || easeOutCubic;
     var start = null;
-
     function step(ts) {
       if (!start) start = ts;
       var raw = Math.min(1, (ts - start) / duration);
       var t = ease(raw);
       onFrame(t, raw);
-      if (raw < 1) {
-        requestAnimationFrame(step);
-      }
+      if (raw < 1) requestAnimationFrame(step);
     }
-
     requestAnimationFrame(step);
   }
 
-  /**
-   * Observe an element once, then disconnect.
-   * @param {Element} el
-   * @param {function} callback
-   * @param {IntersectionObserverInit} [opts]
-   */
   function observeOnce(el, callback, opts) {
     if (!el) return;
     var io = new IntersectionObserver(function (entries) {
@@ -73,14 +47,11 @@
 
   /* ============================================================
      1. SCROLL REVEAL
-     Elements with [data-reveal] start invisible and slide up.
-     The attribute value is the delay in ms.
      ============================================================ */
   function initScrollReveal() {
     var els = Array.from(document.querySelectorAll('[data-reveal]'));
     if (!els.length) return;
 
-    // Set initial invisible state
     els.forEach(function (el) {
       el.style.opacity = '0';
       el.style.transform = 'translateY(26px)';
@@ -105,34 +76,45 @@
 
   /* ============================================================
      2. COUNTER ANIMATION
-     Animates stat numbers when the stats section enters view.
+     Handles any element with [data-counter] attribute.
+     data-counter="600" data-counter-suffix="M+"
      ============================================================ */
+  function formatWithCommas(num, decimals) {
+    var parts = num.toFixed(decimals).split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return parts.join('.');
+  }
+
   function initCounters() {
-    var statsSection = document.getElementById('ax-stats');
-    if (!statsSection) return;
+    var counterEls = document.querySelectorAll('[data-counter]');
+    if (!counterEls.length) return;
 
-    var el17 = document.getElementById('counter-17');
-    var el63 = document.getElementById('counter-63');
+    // Find the closest scrollable ancestor section for each counter
+    counterEls.forEach(function (el) {
+      var target = parseFloat(el.getAttribute('data-counter'));
+      var prefix = el.getAttribute('data-counter-prefix') || '';
+      var suffix = el.getAttribute('data-counter-suffix') || '';
+      var decimals = parseInt(el.getAttribute('data-counter-decimals') || '0', 10);
+      var useCommas = el.hasAttribute('data-counter-commas');
+      var done = false;
 
-    if (!el17 && !el63) return;
+      // Observe the parent stat card or section instead of the tiny span
+      var observeTarget = el.closest('.ax-stat-card') || el.closest('[id]') || el;
 
-    var done = false;
-
-    observeOnce(statsSection, function () {
-      if (done) return;
-      done = true;
-
-      tween(1700, function (t) {
-        if (el17) el17.textContent = String(Math.round(17 * t));
-        if (el63) el63.textContent = String(Math.round(63 * t));
-      }, easeOutCubic);
-    }, { threshold: 0.35 });
+      observeOnce(observeTarget, function () {
+        if (done) return;
+        done = true;
+        tween(2000, function (t) {
+          var val = target * t;
+          var formatted = useCommas ? formatWithCommas(val, decimals) : val.toFixed(decimals);
+          el.textContent = prefix + formatted + suffix;
+        }, easeOutCubic);
+      }, { threshold: 0.15 });
+    });
   }
 
   /* ============================================================
      3. JOURNEY PATH DRAW
-     Animates the SVG stroke-dashoffset from 1→0 and moves
-     a traveling dot along the path.
      ============================================================ */
   function initJourneyPath() {
     var journeySection = document.getElementById('ax-journey');
@@ -142,37 +124,51 @@
     if (!journeySection || !animatedPath) return;
 
     var done = false;
+    var pathLen;
 
-    observeOnce(journeySection, function () {
-      if (done) return;
-      done = true;
+    requestAnimationFrame(function () {
+      try { pathLen = animatedPath.getTotalLength(); } catch (e) { pathLen = 0; }
+    });
 
-      var pathLen = animatedPath.getTotalLength();
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting && !done) {
+          done = true;
+          io.disconnect();
 
-      // Show the traveling dot
-      if (travelingDot) {
-        travelingDot.style.display = 'block';
-      }
+          if (!pathLen) {
+            try { pathLen = animatedPath.getTotalLength(); } catch (e) { pathLen = 0; }
+          }
 
-      tween(2800, function (t) {
-        var eased = easeInOutQuad(t);
+          if (travelingDot) travelingDot.style.display = 'block';
 
-        // Draw the path
-        animatedPath.style.strokeDashoffset = String(1 - eased);
+          var startTime = null;
+          var DURATION = 2800;
 
-        // Move the dot along the path
-        if (travelingDot && pathLen) {
-          var pt = animatedPath.getPointAtLength(pathLen * eased);
-          travelingDot.setAttribute('cx', String(pt.x));
-          travelingDot.setAttribute('cy', String(pt.y));
+          function frame(ts) {
+            if (!startTime) startTime = ts;
+            var raw = Math.min(1, (ts - startTime) / DURATION);
+            var eased = easeInOutQuad(raw);
+
+            animatedPath.style.strokeDashoffset = String(1 - eased);
+
+            if (travelingDot && pathLen > 0) {
+              try {
+                var pt = animatedPath.getPointAtLength(pathLen * eased);
+                travelingDot.setAttribute('cx', String(pt.x));
+                travelingDot.setAttribute('cy', String(pt.y));
+              } catch (err) { /* noop */ }
+            }
+
+            if (raw < 1) requestAnimationFrame(frame);
+          }
+
+          requestAnimationFrame(frame);
         }
-
-        // At the end, hide the dot (it reached the last node)
-        if (t >= 1 && travelingDot) {
-          // Keep dot at final position
-        }
-      }, function (t) { return t; }); // raw linear progress fed into easeInOutQuad inside frame
+      });
     }, { threshold: 0.35 });
+
+    io.observe(journeySection);
   }
 
   /* ============================================================
@@ -197,7 +193,6 @@
       }
     });
 
-    // Close menu when a link is clicked
     var menuLinks = mobileMenu.querySelectorAll('a');
     menuLinks.forEach(function (link) {
       link.addEventListener('click', function () {
@@ -207,7 +202,6 @@
       });
     });
 
-    // Close menu on outside click
     document.addEventListener('click', function (e) {
       if (!hamburger.contains(e.target) && !mobileMenu.contains(e.target)) {
         mobileMenu.classList.remove('is-open');
@@ -219,10 +213,9 @@
 
   /* ============================================================
      5. SMOOTH SCROLL
-     Handles anchor links — offsets for fixed nav height.
      ============================================================ */
   function initSmoothScroll() {
-    var NAV_HEIGHT = 80; // px offset for fixed nav
+    var NAV_HEIGHT = 80;
 
     document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
       anchor.addEventListener('click', function (e) {
@@ -240,72 +233,82 @@
   }
 
   /* ============================================================
-     6. JOURNEY PATH RE-INIT (fix: call with correct easing)
+     6. ACTIVE NAV STATE
      ============================================================ */
-  function initJourneyPathFixed() {
-    var journeySection = document.getElementById('ax-journey');
-    var animatedPath = document.getElementById('ax-journey-path');
-    var travelingDot = document.getElementById('ax-journey-dot');
+  function initActiveNav() {
+    var path = window.location.pathname;
+    var page = path.split('/').pop() || 'index.html';
 
-    if (!journeySection || !animatedPath) return;
+    var navMap = {
+      'index.html': 'Home',
+      '': 'Home',
+      'about.html': 'About Us',
+      'programs.html': 'Thematic Areas',
+      'impact.html': 'Impact',
+      'contact.html': 'Contact Us'
+    };
 
-    var done = false;
-    var pathLen;
+    var activeName = navMap[page];
+    if (!activeName) return;
 
-    // Wait for layout to calculate total length
-    requestAnimationFrame(function () {
-      try {
-        pathLen = animatedPath.getTotalLength();
-      } catch (e) {
-        pathLen = 0;
+    document.querySelectorAll('.ax-navlinks a, .ax-mobile-menu a').forEach(function (link) {
+      if (link.textContent.trim() === activeName) {
+        link.classList.add('is-active');
       }
     });
+  }
 
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (entry.isIntersecting && !done) {
-          done = true;
-          io.disconnect();
+  /* ============================================================
+     7. CONTACT FORM
+     ============================================================ */
+  function initContactForm() {
+    var form = document.getElementById('ax-contact-form');
+    if (!form) return;
 
-          if (!pathLen) {
-            try { pathLen = animatedPath.getTotalLength(); } catch (e) { pathLen = 0; }
-          }
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
 
-          if (travelingDot) {
-            travelingDot.style.display = 'block';
-          }
+      var submitBtn = form.querySelector('.ax-form-submit');
+      var originalText = submitBtn.innerHTML;
+      submitBtn.textContent = 'Sending...';
+      submitBtn.disabled = true;
 
-          var startTime = null;
-          var DURATION = 2800;
-
-          function frame(ts) {
-            if (!startTime) startTime = ts;
-            var raw = Math.min(1, (ts - startTime) / DURATION);
-            var eased = easeInOutQuad(raw);
-
-            // Animate stroke-dashoffset from 1 to 0
-            animatedPath.style.strokeDashoffset = String(1 - eased);
-
-            // Move dot
-            if (travelingDot && pathLen > 0) {
-              try {
-                var pt = animatedPath.getPointAtLength(pathLen * eased);
-                travelingDot.setAttribute('cx', String(pt.x));
-                travelingDot.setAttribute('cy', String(pt.y));
-              } catch (err) { /* noop */ }
-            }
-
-            if (raw < 1) {
-              requestAnimationFrame(frame);
-            }
-          }
-
-          requestAnimationFrame(frame);
+      // Submit via Netlify Forms
+      var formData = new FormData(form);
+      fetch('/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(formData).toString()
+      })
+      .then(function (response) {
+        if (response.ok) {
+          submitBtn.textContent = 'Message Sent!';
+          submitBtn.style.background = 'linear-gradient(120deg, #059669, #10B981)';
+          form.reset();
+        } else {
+          submitBtn.textContent = 'Error — Please try again';
+          submitBtn.style.background = 'linear-gradient(120deg, #DC2626, #EF4444)';
         }
+        setTimeout(function () {
+          submitBtn.innerHTML = originalText;
+          submitBtn.style.background = '';
+          submitBtn.disabled = false;
+        }, 3000);
+      })
+      .catch(function () {
+        // Fallback: open mailto
+        var email = formData.get('work_email') || '';
+        var name = formData.get('full_name') || '';
+        var org = formData.get('organization') || '';
+        var msg = formData.get('message') || '';
+        var subject = 'CSR Partnership Enquiry from ' + name + ' (' + org + ')';
+        var body = 'Name: ' + name + '\nOrganization: ' + org + '\nEmail: ' + email + '\n\n' + msg;
+        window.location.href = 'mailto:hello@auxova.in?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+        submitBtn.innerHTML = originalText;
+        submitBtn.style.background = '';
+        submitBtn.disabled = false;
       });
-    }, { threshold: 0.35 });
-
-    io.observe(journeySection);
+    });
   }
 
   /* ============================================================
@@ -314,9 +317,11 @@
   function init() {
     initScrollReveal();
     initCounters();
-    initJourneyPathFixed();
+    initJourneyPath();
     initMobileMenu();
     initSmoothScroll();
+    initActiveNav();
+    initContactForm();
   }
 
   if (document.readyState === 'loading') {
